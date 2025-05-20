@@ -1,4 +1,3 @@
-
 // Network monitoring service
 import { toast } from "sonner";
 
@@ -20,6 +19,21 @@ export interface NetworkStats {
   status: 'good' | 'warning' | 'error' | 'unknown';
   networkName: string;
 }
+
+// Helper function to get user-friendly network type name
+const getNetworkTypeName = (type: string): string => {
+  switch (type) {
+    case 'wifi': return 'WiFi';
+    case 'cellular': return 'Cellular';
+    case 'ethernet': return 'Ethernet';
+    case 'none': return 'Offline';
+    case 'other': return 'Other';
+    case 'unknown': return 'Unknown';
+    case 'wimax': return 'WiMax';
+    case 'bluetooth': return 'Bluetooth';
+    default: return type.charAt(0).toUpperCase() + type.slice(1) || 'Unknown';
+  }
+};
 
 class NetworkService {
   private data: NetworkSnapshot[] = [];
@@ -44,7 +58,17 @@ class NetworkService {
     
     // Get initial network name
     this.updateNetworkName();
+    
+    // Add connection change listener if supported
+    if ('connection' in navigator && 'addEventListener' in (navigator as any).connection) {
+      (navigator as any).connection.addEventListener('change', this.handleConnectionChange);
+    }
   }
+
+  private handleConnectionChange = () => {
+    console.log('Connection change detected');
+    this.updateNetworkName();
+  };
 
   private handleNetworkChange = () => {
     const isOnline = navigator.onLine;
@@ -65,20 +89,48 @@ class NetworkService {
   // Method to update current network name
   private async updateNetworkName() {
     try {
-      if ('connection' in navigator && 'networkInfo' in (navigator as any).connection) {
-        // For browsers that support NetworkInformation API
-        this.currentNetworkName = (navigator as any).connection.networkInfo?.name || "Unknown";
-      } else {
-        // Fallback: try to determine network name from connection type
-        const connectionType = ('connection' in navigator) ? 
-          (navigator as any).connection?.type || "Unknown" : "Unknown";
+      if ('connection' in navigator) {
+        const connection = (navigator as any).connection;
         
-        this.currentNetworkName = connectionType === 'wifi' ? "WiFi" : 
-          connectionType === 'cellular' ? "Cellular" : 
-          connectionType === 'ethernet' ? "Ethernet" : "Unknown";
+        // Try to get the network type
+        const connectionType = connection?.type || 'unknown';
+        console.log('Connection type:', connectionType);
+        
+        // Try to get additional info if available
+        const effectiveType = connection?.effectiveType || '';
+        console.log('Effective type:', effectiveType);
+        
+        // Combine information for more descriptive name
+        let networkName = getNetworkTypeName(connectionType);
+        
+        // Add speed info if available
+        if (effectiveType && effectiveType !== 'unknown') {
+          const speedLabels: {[key: string]: string} = {
+            'slow-2g': '(Very Slow)',
+            '2g': '(Slow)',
+            '3g': '(Medium)',
+            '4g': '(Fast)',
+            '5g': '(Very Fast)'
+          };
+          
+          const speedLabel = speedLabels[effectiveType] || '';
+          if (speedLabel) {
+            networkName += ` ${speedLabel}`;
+          }
+        }
+        
+        // Add timestamp to make each network instance somewhat unique when changing between networks
+        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        this.currentNetworkName = `${networkName} (${timestamp})`;
+        
+        console.log('Detected network name:', this.currentNetworkName);
+      } else {
+        // Fallback
+        this.currentNetworkName = navigator.onLine ? "Online Network" : "Offline";
       }
     } catch (error) {
-      this.currentNetworkName = "Unknown";
+      console.error('Error detecting network:', error);
+      this.currentNetworkName = "Unknown Network";
     }
   }
 
@@ -351,4 +403,3 @@ class NetworkService {
 
 // Create singleton instance
 export const networkService = new NetworkService();
-

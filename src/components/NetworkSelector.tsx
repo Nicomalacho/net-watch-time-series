@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { networkService } from "@/services/networkService";
-import { Network } from "lucide-react";
+import { Network, WifiHigh } from "lucide-react";
 
 interface NetworkSelectorProps {
   selectedNetwork: string | undefined;
@@ -28,7 +28,7 @@ const NetworkSelector: React.FC<NetworkSelectorProps> = ({
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2">
-          <Network className="h-4 w-4" />
+          <WifiHigh className="h-4 w-4" />
           Network
         </CardTitle>
       </CardHeader>
@@ -49,6 +49,13 @@ const NetworkSelector: React.FC<NetworkSelectorProps> = ({
             ))}
           </SelectContent>
         </Select>
+        <div className="mt-2 text-xs text-muted-foreground">
+          {networks.length === 0 ? (
+            "No networks detected yet. Start monitoring to detect networks."
+          ) : (
+            `${networks.length} network${networks.length !== 1 ? 's' : ''} detected`
+          )}
+        </div>
       </CardContent>
     </Card>
   );
