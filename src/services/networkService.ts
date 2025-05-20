@@ -7,6 +7,8 @@ export interface NetworkSnapshot {
   status: 'good' | 'warning' | 'error' | 'unknown';
   online: boolean;
   networkName: string;
+  downloadSpeed?: number; // Speed in Mbps
+  uploadSpeed?: number;   // Speed in Mbps
 }
 
 export interface NetworkStats {
@@ -18,6 +20,10 @@ export interface NetworkStats {
   packetLoss: number;
   status: 'good' | 'warning' | 'error' | 'unknown';
   networkName: string;
+  downloadSpeed?: number; // Current download speed in Mbps
+  uploadSpeed?: number;   // Current upload speed in Mbps
+  avgDownloadSpeed?: number; // Average download speed in Mbps
+  avgUploadSpeed?: number;   // Average upload speed in Mbps
 }
 
 // Helper function to get user-friendly network type name
@@ -50,6 +56,7 @@ class NetworkService {
   private pingTimeout = 2000; // 2 second timeout for ping
   private goodThreshold = 150; // ms - Anything below is considered good
   private warningThreshold = 300; // ms - Anything below is warning, above is error
+  private speedTestInterval = 30000; // 30 seconds between speed tests
 
   constructor() {
     // Listen for online/offline events
@@ -199,6 +206,64 @@ class NetworkService {
     });
   }
 
+  // Method to measure download speed
+  async measureDownloadSpeed(): Promise<number> {
+    try {
+      const startTime = performance.now();
+      const fileSize = 1024 * 500; // 500KB file size
+      const testUrl = `https://www.cloudflare.com/cdn-cgi/trace?cache=${Date.now()}`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10-second timeout
+      
+      const response = await fetch(testUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      
+      const endTime = performance.now();
+      const durationSeconds = (endTime - startTime) / 1000;
+      
+      // Calculate speed in Mbps (Megabits per second)
+      // This is an approximation since we don't know the exact file size
+      const downloadSpeedMbps = (fileSize * 8) / (durationSeconds * 1024 * 1024);
+      
+      return downloadSpeedMbps;
+    } catch (error) {
+      console.log('Speed measurement error:', error);
+      return -1;
+    }
+  }
+
+  // Method to measure upload speed (approximation)
+  async measureUploadSpeed(): Promise<number> {
+    try {
+      const startTime = performance.now();
+      const dataSize = 256 * 1024; // 256KB of data
+      const testData = new Array(dataSize).fill('X').join('');
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10-second timeout
+      
+      // Using a post request to simulate upload
+      const response = await fetch('https://httpbin.org/post', {
+        method: 'POST',
+        body: testData,
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      const endTime = performance.now();
+      const durationSeconds = (endTime - startTime) / 1000;
+      
+      // Calculate speed in Mbps
+      const uploadSpeedMbps = (dataSize * 8) / (durationSeconds * 1024 * 1024);
+      
+      return uploadSpeedMbps;
+    } catch (error) {
+      console.log('Upload speed measurement error:', error);
+      return -1;
+    }
+  }
+
   private calculateStats(networkName?: string): NetworkStats {
     let dataToAnalyze = networkName 
       ? this.data.filter(snapshot => snapshot.networkName === networkName)
@@ -213,7 +278,11 @@ class NetworkService {
         lastUpdated: new Date(),
         packetLoss: 0,
         status: 'unknown',
-        networkName: networkName || 'All Networks'
+        networkName: networkName || 'All Networks',
+        downloadSpeed: 0,
+        uploadSpeed: 0,
+        avgDownloadSpeed: 0,
+        avgUploadSpeed: 0
       };
     }
 
@@ -221,13 +290,31 @@ class NetworkService {
     const validPings = dataToAnalyze.filter(snapshot => snapshot.pingTime >= 0);
     const pingValues = validPings.map(snapshot => snapshot.pingTime);
     
+    // Calculate download/upload speed averages
+    const validDownloadSpeeds = dataToAnalyze
+      .filter(snapshot => snapshot.downloadSpeed !== undefined && snapshot.downloadSpeed > 0)
+      .map(snapshot => snapshot.downloadSpeed!);
+      
+    const validUploadSpeeds = dataToAnalyze
+      .filter(snapshot => snapshot.uploadSpeed !== undefined && snapshot.uploadSpeed > 0)
+      .map(snapshot => snapshot.uploadSpeed!);
+    
     const min = pingValues.length > 0 ? Math.min(...pingValues) : 0;
     const max = pingValues.length > 0 ? Math.max(...pingValues) : 0;
     const avg = pingValues.length > 0 
       ? pingValues.reduce((sum, val) => sum + val, 0) / pingValues.length 
       : 0;
     
-    const currentPing = dataToAnalyze[dataToAnalyze.length - 1]?.pingTime ?? 0;
+    const avgDownloadSpeed = validDownloadSpeeds.length > 0
+      ? validDownloadSpeeds.reduce((sum, val) => sum + val, 0) / validDownloadSpeeds.length
+      : 0;
+      
+    const avgUploadSpeed = validUploadSpeeds.length > 0
+      ? validUploadSpeeds.reduce((sum, val) => sum + val, 0) / validUploadSpeeds.length
+      : 0;
+    
+    const latestSnapshot = dataToAnalyze[dataToAnalyze.length - 1];
+    const currentPing = latestSnapshot?.pingTime ?? 0;
     const packetLoss = dataToAnalyze.length > 0 
       ? (dataToAnalyze.filter(d => d.pingTime < 0).length / dataToAnalyze.length) * 100 
       : 0;
@@ -254,7 +341,11 @@ class NetworkService {
       lastUpdated: new Date(),
       packetLoss,
       status,
-      networkName: networkName || 'All Networks'
+      networkName: networkName || 'All Networks',
+      downloadSpeed: latestSnapshot?.downloadSpeed,
+      uploadSpeed: latestSnapshot?.uploadSpeed,
+      avgDownloadSpeed,
+      avgUploadSpeed
     };
   }
 
@@ -310,12 +401,27 @@ class NetworkService {
       status = 'error';
     }
     
+    // Time-based speed measurement
+    // Only do speed test every 30 seconds to avoid overloading
+    let downloadSpeed, uploadSpeed;
+    if (Date.now() % this.speedTestInterval < this.monitoringFrequency) {
+      downloadSpeed = await this.measureDownloadSpeed();
+      uploadSpeed = await this.measureUploadSpeed();
+    } else {
+      // Use latest values if we're not doing a speed test this round
+      const latestSnapshot = this.data[this.data.length - 1];
+      downloadSpeed = latestSnapshot?.downloadSpeed;
+      uploadSpeed = latestSnapshot?.uploadSpeed;
+    }
+    
     const snapshot: NetworkSnapshot = {
       timestamp: Date.now(),
       pingTime,
       status,
       online,
-      networkName: this.currentNetworkName
+      networkName: this.currentNetworkName,
+      downloadSpeed,
+      uploadSpeed
     };
     
     this.data.push(snapshot);
@@ -362,8 +468,8 @@ class NetworkService {
       return 'No data to export';
     }
     
-    // Create CSV content
-    const headers = ["Timestamp", "Date/Time", "Ping (ms)", "Status", "Online", "Network"];
+    // Create CSV content with added speed metrics
+    const headers = ["Timestamp", "Date/Time", "Ping (ms)", "Status", "Online", "Network", "Download (Mbps)", "Upload (Mbps)"];
     const csvContent = [
       headers.join(','),
       ...dataToExport.map(item => {
@@ -375,7 +481,9 @@ class NetworkService {
           item.pingTime,
           item.status,
           item.online,
-          item.networkName
+          item.networkName,
+          item.downloadSpeed !== undefined ? item.downloadSpeed.toFixed(2) : "N/A",
+          item.uploadSpeed !== undefined ? item.uploadSpeed.toFixed(2) : "N/A"
         ].join(',');
       })
     ].join('\n');
@@ -398,6 +506,97 @@ class NetworkService {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  }
+
+  // Get historical metrics for time periods
+  getHistoricalMetrics(networkName?: string, period: 'day'|'week'|'hour' = 'day') {
+    const data = networkName 
+      ? this.data.filter(item => item.networkName === networkName)
+      : this.data;
+
+    if (data.length === 0) {
+      return {
+        availabilityPercentage: 0,
+        p95Ping: 0,
+        p99Ping: 0,
+        maxPing: 0,
+        avgPing: 0,
+        avgDownloadSpeed: 0,
+        avgUploadSpeed: 0,
+        timeframe: period
+      };
+    }
+    
+    // Filter data by time period
+    const now = Date.now();
+    const periodMs = period === 'hour' ? 3600000 : period === 'day' ? 86400000 : 604800000;
+    const filteredData = data.filter(item => (now - item.timestamp) <= periodMs);
+    
+    if (filteredData.length === 0) {
+      return {
+        availabilityPercentage: 0,
+        p95Ping: 0,
+        p99Ping: 0,
+        maxPing: 0,
+        avgPing: 0,
+        avgDownloadSpeed: 0,
+        avgUploadSpeed: 0,
+        timeframe: period
+      };
+    }
+    
+    // Calculate availability percentage
+    const totalDataPoints = filteredData.length;
+    const availableDataPoints = filteredData.filter(item => 
+      item.online && item.pingTime >= 0 && item.pingTime < this.warningThreshold
+    ).length;
+    
+    const availabilityPercentage = (availableDataPoints / totalDataPoints) * 100;
+    
+    // Calculate ping percentiles
+    const validPings = filteredData
+      .filter(item => item.pingTime >= 0)
+      .map(item => item.pingTime)
+      .sort((a, b) => a - b);
+      
+    const maxPing = validPings.length ? validPings[validPings.length - 1] : 0;
+    const avgPing = validPings.length 
+      ? validPings.reduce((sum, val) => sum + val, 0) / validPings.length 
+      : 0;
+      
+    const p95Index = Math.floor(validPings.length * 0.95);
+    const p99Index = Math.floor(validPings.length * 0.99);
+    
+    const p95Ping = validPings.length ? validPings[p95Index] : 0;
+    const p99Ping = validPings.length ? validPings[p99Index] : 0;
+    
+    // Calculate average speeds
+    const validDownloadSpeeds = filteredData
+      .filter(item => item.downloadSpeed !== undefined && item.downloadSpeed > 0)
+      .map(item => item.downloadSpeed!);
+      
+    const validUploadSpeeds = filteredData
+      .filter(item => item.uploadSpeed !== undefined && item.uploadSpeed > 0)
+      .map(item => item.uploadSpeed!);
+    
+    const avgDownloadSpeed = validDownloadSpeeds.length 
+      ? validDownloadSpeeds.reduce((sum, val) => sum + val, 0) / validDownloadSpeeds.length 
+      : 0;
+      
+    const avgUploadSpeed = validUploadSpeeds.length 
+      ? validUploadSpeeds.reduce((sum, val) => sum + val, 0) / validUploadSpeeds.length 
+      : 0;
+    
+    return {
+      availabilityPercentage,
+      p95Ping,
+      p99Ping,
+      maxPing,
+      avgPing,
+      avgDownloadSpeed,
+      avgUploadSpeed,
+      timeframe: period
+    };
   }
 }
 

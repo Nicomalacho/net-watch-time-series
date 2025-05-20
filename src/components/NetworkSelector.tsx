@@ -1,9 +1,11 @@
 
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { networkService } from "@/services/networkService";
-import { Network, WifiHigh } from "lucide-react";
+import { Network, WifiHigh, ChartLine } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface NetworkSelectorProps {
   selectedNetwork: string | undefined;
@@ -57,6 +59,13 @@ const NetworkSelector: React.FC<NetworkSelectorProps> = ({
           )}
         </div>
       </CardContent>
+      <CardFooter className="pt-0">
+        <Button variant="secondary" size="sm" className="w-full" asChild>
+          <Link to="/history" className="flex items-center justify-center gap-2">
+            <ChartLine className="h-4 w-4" /> View Historical Metrics
+          </Link>
+        </Button>
+      </CardFooter>
     </Card>
   );
 };
