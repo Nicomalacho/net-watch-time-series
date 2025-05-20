@@ -11,18 +11,22 @@ const StatusColors = {
   unknown: "bg-gray-500"
 };
 
-const StatusIndicator: React.FC = () => {
+interface StatusIndicatorProps {
+  selectedNetwork?: string;
+}
+
+const StatusIndicator: React.FC<StatusIndicatorProps> = ({ selectedNetwork }) => {
   const [stats, setStats] = useState<NetworkStats | null>(null);
 
   useEffect(() => {
     const unsubscribe = networkService.subscribeToStats((newStats) => {
       setStats(newStats);
-    });
+    }, selectedNetwork);
 
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [selectedNetwork]);
 
   if (!stats) {
     return (
@@ -58,7 +62,14 @@ const StatusIndicator: React.FC = () => {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle>Connection Status</CardTitle>
+        <CardTitle>
+          Connection Status
+          {stats.networkName && stats.networkName !== 'All Networks' && (
+            <span className="text-sm font-normal text-muted-foreground ml-2">
+              {stats.networkName}
+            </span>
+          )}
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="flex flex-col items-center justify-center py-4">

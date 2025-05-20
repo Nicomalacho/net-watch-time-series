@@ -6,7 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Download } from "lucide-react";
 
-const ControlPanel: React.FC = () => {
+interface ControlPanelProps {
+  selectedNetwork?: string;
+}
+
+const ControlPanel: React.FC<ControlPanelProps> = ({ selectedNetwork }) => {
   const [isMonitoring, setIsMonitoring] = useState(false);
 
   const toggleMonitoring = () => {
@@ -27,8 +31,8 @@ const ControlPanel: React.FC = () => {
   };
 
   const downloadData = () => {
-    networkService.downloadCSV();
-    toast.success("Download started");
+    networkService.downloadCSV(selectedNetwork);
+    toast.success(`Download started${selectedNetwork ? ` for ${selectedNetwork}` : ''}`);
   };
 
   return (
@@ -60,7 +64,7 @@ const ControlPanel: React.FC = () => {
             className="w-full"
           >
             <Download className="mr-2 h-4 w-4" />
-            Export CSV
+            Export {selectedNetwork ? selectedNetwork : 'All'} CSV
           </Button>
         </div>
       </CardContent>

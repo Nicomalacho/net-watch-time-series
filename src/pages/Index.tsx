@@ -1,12 +1,14 @@
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import NetworkChart from "@/components/NetworkChart";
 import StatusIndicator from "@/components/StatusIndicator";
 import ControlPanel from "@/components/ControlPanel";
+import NetworkSelector from "@/components/NetworkSelector";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 const Index = () => {
   const isMobile = useIsMobile();
+  const [selectedNetwork, setSelectedNetwork] = useState<string | undefined>(undefined);
 
   return (
     <div className="min-h-screen bg-background text-foreground pb-8">
@@ -23,13 +25,17 @@ const Index = () => {
         <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-3'} gap-4 md:gap-6`}>
           {/* Status and Controls (side by side on desktop) */}
           <div className="flex flex-col gap-4">
-            <StatusIndicator />
-            <ControlPanel />
+            <NetworkSelector 
+              selectedNetwork={selectedNetwork} 
+              onNetworkChange={setSelectedNetwork} 
+            />
+            <StatusIndicator selectedNetwork={selectedNetwork} />
+            <ControlPanel selectedNetwork={selectedNetwork} />
           </div>
           
           {/* Main chart (takes up more space on desktop) */}
           <div className="md:col-span-2">
-            <NetworkChart />
+            <NetworkChart selectedNetwork={selectedNetwork} />
           </div>
         </div>
       </div>

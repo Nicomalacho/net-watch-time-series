@@ -15,21 +15,25 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface NetworkChartProps {
   title?: string;
+  selectedNetwork?: string;
 }
 
-const NetworkChart: React.FC<NetworkChartProps> = ({ title = "Network Performance" }) => {
+const NetworkChart: React.FC<NetworkChartProps> = ({ 
+  title = "Network Performance",
+  selectedNetwork 
+}) => {
   const [data, setData] = useState<NetworkSnapshot[]>([]);
 
   useEffect(() => {
-    // Subscribe to network data updates
+    // Subscribe to network data updates with optional network filter
     const unsubscribe = networkService.subscribe((newData) => {
       setData([...newData]);
-    });
+    }, selectedNetwork);
 
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [selectedNetwork]);
 
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp);
@@ -67,10 +71,14 @@ const NetworkChart: React.FC<NetworkChartProps> = ({ title = "Network Performanc
     );
   };
 
+  const chartTitle = selectedNetwork 
+    ? `${title} - ${selectedNetwork}` 
+    : `${title} - All Networks`;
+
   return (
     <Card className="w-full">
       <CardHeader className="pb-2">
-        <CardTitle>{title}</CardTitle>
+        <CardTitle>{chartTitle}</CardTitle>
       </CardHeader>
       <CardContent className="h-[300px]">
         <ResponsiveContainer width="100%" height="100%">
@@ -100,7 +108,10 @@ const NetworkChart: React.FC<NetworkChartProps> = ({ title = "Network Performanc
             />
             <Tooltip 
               formatter={formatTooltip}
-              labelFormatter={(timestamp) => `Time: ${formatTime(timestamp)}`}
+              labelFormatter={(timestamp) => {
+                const dataPoint = data.find(d => d.timestamp === timestamp);
+                return `Time: ${formatTime(timestamp)}${dataPoint ? ` | Network: ${dataPoint.networkName}` : ''}`;
+              }}
               contentStyle={{ 
                 backgroundColor: 'rgba(30, 30, 30, 0.9)', 
                 border: '1px solid #555',

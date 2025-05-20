@@ -7,6 +7,7 @@ export interface NetworkSnapshot {
   pingTime: number;
   status: 'good' | 'warning' | 'error' | 'unknown';
   online: boolean;
+  networkName: string;
 }
 
 export interface NetworkStats {
@@ -17,6 +18,7 @@ export interface NetworkStats {
   lastUpdated: Date;
   packetLoss: number;
   status: 'good' | 'warning' | 'error' | 'unknown';
+  networkName: string;
 }
 
 class NetworkService {
@@ -26,6 +28,7 @@ class NetworkService {
   private statsSubscribers: ((stats: NetworkStats) => void)[] = [];
   private isMonitoring = false;
   private lastOnlineStatus = navigator.onLine;
+  private currentNetworkName = "Unknown";
   
   // Configuration
   private monitoringFrequency = 3000; // 3 seconds
@@ -38,6 +41,9 @@ class NetworkService {
     // Listen for online/offline events
     window.addEventListener('online', this.handleNetworkChange);
     window.addEventListener('offline', this.handleNetworkChange);
+    
+    // Get initial network name
+    this.updateNetworkName();
   }
 
   private handleNetworkChange = () => {
@@ -48,6 +54,7 @@ class NetworkService {
       this.lastOnlineStatus = isOnline;
       
       if (isOnline) {
+        this.updateNetworkName();
         toast.success("Internet connection restored");
       } else {
         toast.error("Internet connection lost");
@@ -55,21 +62,70 @@ class NetworkService {
     }
   }
 
-  subscribe(callback: (data: NetworkSnapshot[]) => void) {
-    this.subscribers.push(callback);
+  // Method to update current network name
+  private async updateNetworkName() {
+    try {
+      if ('connection' in navigator && 'networkInfo' in (navigator as any).connection) {
+        // For browsers that support NetworkInformation API
+        this.currentNetworkName = (navigator as any).connection.networkInfo?.name || "Unknown";
+      } else {
+        // Fallback: try to determine network name from connection type
+        const connectionType = ('connection' in navigator) ? 
+          (navigator as any).connection?.type || "Unknown" : "Unknown";
+        
+        this.currentNetworkName = connectionType === 'wifi' ? "WiFi" : 
+          connectionType === 'cellular' ? "Cellular" : 
+          connectionType === 'ethernet' ? "Ethernet" : "Unknown";
+      }
+    } catch (error) {
+      this.currentNetworkName = "Unknown";
+    }
+  }
+
+  // Get all unique network names
+  getNetworks(): string[] {
+    const networkSet = new Set<string>(this.data.map(item => item.networkName));
+    return Array.from(networkSet);
+  }
+
+  // Get data for a specific network
+  getNetworkData(networkName?: string): NetworkSnapshot[] {
+    if (!networkName) return [...this.data];
+    return this.data.filter(item => item.networkName === networkName);
+  }
+
+  subscribe(callback: (data: NetworkSnapshot[]) => void, networkName?: string) {
+    const wrappedCallback = (data: NetworkSnapshot[]) => {
+      if (networkName) {
+        callback(data.filter(item => item.networkName === networkName));
+      } else {
+        callback(data);
+      }
+    };
+    
+    this.subscribers.push(wrappedCallback);
     // Immediately send current data
-    callback([...this.data]);
+    wrappedCallback([...this.data]);
+    
     return () => {
-      this.subscribers = this.subscribers.filter(cb => cb !== callback);
+      this.subscribers = this.subscribers.filter(cb => cb !== wrappedCallback);
     };
   }
 
-  subscribeToStats(callback: (stats: NetworkStats) => void) {
-    this.statsSubscribers.push(callback);
+  subscribeToStats(callback: (stats: NetworkStats) => void, networkName?: string) {
+    const wrappedCallback = (stats: NetworkStats) => {
+      // Only send stats if they match the requested network or no network specified
+      if (!networkName || stats.networkName === networkName) {
+        callback(stats);
+      }
+    };
+    
+    this.statsSubscribers.push(wrappedCallback);
     // Immediately send current stats
-    callback(this.calculateStats());
+    wrappedCallback(this.calculateStats(networkName));
+    
     return () => {
-      this.statsSubscribers = this.statsSubscribers.filter(cb => cb !== callback);
+      this.statsSubscribers = this.statsSubscribers.filter(cb => cb !== wrappedCallback);
     };
   }
 
@@ -77,12 +133,26 @@ class NetworkService {
     const currentData = [...this.data];
     this.subscribers.forEach(callback => callback(currentData));
     
-    const stats = this.calculateStats();
-    this.statsSubscribers.forEach(callback => callback(stats));
+    // Calculate stats for each network and overall
+    const networks = this.getNetworks();
+    
+    // Calculate overall stats
+    const overallStats = this.calculateStats();
+    this.statsSubscribers.forEach(callback => callback(overallStats));
+    
+    // Calculate stats for each network
+    networks.forEach(network => {
+      const networkStats = this.calculateStats(network);
+      this.statsSubscribers.forEach(callback => callback(networkStats));
+    });
   }
 
-  private calculateStats(): NetworkStats {
-    if (this.data.length === 0) {
+  private calculateStats(networkName?: string): NetworkStats {
+    let dataToAnalyze = networkName 
+      ? this.data.filter(snapshot => snapshot.networkName === networkName)
+      : this.data;
+      
+    if (dataToAnalyze.length === 0) {
       return {
         min: 0,
         max: 0,
@@ -90,12 +160,13 @@ class NetworkService {
         currentPing: 0,
         lastUpdated: new Date(),
         packetLoss: 0,
-        status: 'unknown'
+        status: 'unknown',
+        networkName: networkName || 'All Networks'
       };
     }
 
     // Filter out error values (-1)
-    const validPings = this.data.filter(snapshot => snapshot.pingTime >= 0);
+    const validPings = dataToAnalyze.filter(snapshot => snapshot.pingTime >= 0);
     const pingValues = validPings.map(snapshot => snapshot.pingTime);
     
     const min = pingValues.length > 0 ? Math.min(...pingValues) : 0;
@@ -104,9 +175,9 @@ class NetworkService {
       ? pingValues.reduce((sum, val) => sum + val, 0) / pingValues.length 
       : 0;
     
-    const currentPing = this.data[this.data.length - 1]?.pingTime ?? 0;
-    const packetLoss = this.data.length > 0 
-      ? (this.data.filter(d => d.pingTime < 0).length / this.data.length) * 100 
+    const currentPing = dataToAnalyze[dataToAnalyze.length - 1]?.pingTime ?? 0;
+    const packetLoss = dataToAnalyze.length > 0 
+      ? (dataToAnalyze.filter(d => d.pingTime < 0).length / dataToAnalyze.length) * 100 
       : 0;
 
     // Determine overall status
@@ -130,7 +201,8 @@ class NetworkService {
       currentPing,
       lastUpdated: new Date(),
       packetLoss,
-      status
+      status,
+      networkName: networkName || 'All Networks'
     };
   }
 
@@ -167,6 +239,9 @@ class NetworkService {
   }
 
   async captureSnapshot() {
+    // Update network name before capturing
+    await this.updateNetworkName();
+    
     const pingTime = await this.pingServer();
     const online = navigator.onLine;
     
@@ -187,7 +262,8 @@ class NetworkService {
       timestamp: Date.now(),
       pingTime,
       status,
-      online
+      online,
+      networkName: this.currentNetworkName
     };
     
     this.data.push(snapshot);
@@ -225,16 +301,20 @@ class NetworkService {
     this.notifySubscribers();
   }
   
-  exportData(): string {
-    if (this.data.length === 0) {
+  exportData(networkName?: string): string {
+    const dataToExport = networkName 
+      ? this.data.filter(item => item.networkName === networkName)
+      : this.data;
+      
+    if (dataToExport.length === 0) {
       return 'No data to export';
     }
     
     // Create CSV content
-    const headers = ["Timestamp", "Date/Time", "Ping (ms)", "Status", "Online"];
+    const headers = ["Timestamp", "Date/Time", "Ping (ms)", "Status", "Online", "Network"];
     const csvContent = [
       headers.join(','),
-      ...this.data.map(item => {
+      ...dataToExport.map(item => {
         const date = new Date(item.timestamp);
         const dateTimeStr = date.toLocaleString();
         return [
@@ -242,7 +322,8 @@ class NetworkService {
           dateTimeStr,
           item.pingTime,
           item.status,
-          item.online
+          item.online,
+          item.networkName
         ].join(',');
       })
     ].join('\n');
@@ -250,15 +331,16 @@ class NetworkService {
     return csvContent;
   }
   
-  downloadCSV() {
-    const csvContent = this.exportData();
+  downloadCSV(networkName?: string) {
+    const csvContent = this.exportData(networkName);
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     
     const link = document.createElement('a');
     const date = new Date().toISOString().split('T')[0];
+    const network = networkName ? `-${networkName.replace(/[^a-z0-9]/gi, '-')}` : '';
     link.setAttribute('href', url);
-    link.setAttribute('download', `network-data-${date}.csv`);
+    link.setAttribute('download', `network-data${network}-${date}.csv`);
     link.style.visibility = 'hidden';
     
     document.body.appendChild(link);
@@ -269,3 +351,4 @@ class NetworkService {
 
 // Create singleton instance
 export const networkService = new NetworkService();
+
