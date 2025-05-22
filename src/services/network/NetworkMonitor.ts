@@ -1,3 +1,4 @@
+
 import { NetworkSnapshot, NetworkStats, MonitoringChangeCallback } from './types';
 import { mockPing, mockSpeedTest } from './mockUtils';
 
@@ -166,10 +167,57 @@ class NetworkMonitor {
     }
   }
   
+  // Calculate stats from snapshots
+  calculateStats(snapshots: NetworkSnapshot[]): NetworkStats {
+    const recentSnapshots = snapshots.slice(-10); // Last 10 snapshots
+    
+    // If no snapshots, return default stats
+    if (recentSnapshots.length === 0) {
+      return {
+        status: 'unknown',
+        currentPing: 0,
+        min: 0,
+        max: 0,
+        packetLoss: 0,
+      };
+    }
+    
+    // Calculate min and max ping time
+    const pingTimes = recentSnapshots
+      .filter(s => s.pingTime >= 0)
+      .map(s => s.pingTime);
+    
+    const min = pingTimes.length > 0 ? Math.min(...pingTimes) : 0;
+    const max = pingTimes.length > 0 ? Math.max(...pingTimes) : 0;
+    
+    // Calculate packet loss
+    const packetLoss = recentSnapshots.length > 0 
+      ? (recentSnapshots.filter(s => !s.online || s.pingTime < 0).length / recentSnapshots.length) * 100
+      : 0;
+    
+    // Get latest snapshot for current status
+    const latestSnapshot = recentSnapshots[recentSnapshots.length - 1];
+    
+    // Find the most recent speed test
+    const latestWithSpeed = [...recentSnapshots].reverse()
+      .find(s => s.downloadSpeed !== undefined && s.uploadSpeed !== undefined);
+    
+    return {
+      status: latestSnapshot?.status || 'unknown',
+      currentPing: latestSnapshot?.pingTime || 0,
+      min,
+      max,
+      packetLoss,
+      networkName: latestSnapshot?.networkName,
+      downloadSpeed: latestWithSpeed?.downloadSpeed,
+      uploadSpeed: latestWithSpeed?.uploadSpeed,
+    };
+  }
+  
   // Notify all stats subscribers
   private notifyStatsSubscribers() {
     for (const [name, subscribers] of this.statsSubscribers.entries()) {
-      const stats = this.calculateStats(name);
+      const stats = this.calculateStats(this.getSnapshots(name));
       for (const callback of subscribers) {
         callback(stats);
       }
