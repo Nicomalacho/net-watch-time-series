@@ -1,5 +1,6 @@
 // Network monitoring service
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 export interface NetworkSnapshot {
   timestamp: number;
@@ -597,6 +598,47 @@ class NetworkService {
       avgUploadSpeed,
       timeframe: period
     };
+  }
+
+  // Add method to sync data to Supabase
+  async syncToSupabase(user_id: string | undefined) {
+    if (!user_id) return;
+    
+    try {
+      // Only sync the last 10 metrics to avoid overloading
+      const metricsToSync = this.data.slice(-10);
+      
+      if (metricsToSync.length === 0) return;
+      
+      const { error } = await supabase.from('network_metrics')
+        .insert(metricsToSync.map(metric => ({
+          user_id,
+          timestamp: metric.timestamp,
+          ping_time: metric.pingTime,
+          status: metric.status,
+          online: metric.online,
+          network_name: metric.networkName,
+          download_speed: metric.downloadSpeed,
+          upload_speed: metric.uploadSpeed
+        })));
+        
+      if (error) {
+        console.error('Error syncing metrics to Supabase:', error);
+        throw error;
+      }
+      
+      console.log('Successfully synced metrics to Supabase');
+      return true;
+    } catch (error) {
+      console.error('Failed to sync metrics to Supabase:', error);
+      return false;
+    }
+  }
+  
+  // Method to check for user session
+  async getUserSession() {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session;
   }
 }
 
