@@ -7,7 +7,7 @@ import NetworkSelector from "@/components/NetworkSelector";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { UserCircle2, Share2, ChartLineIcon } from "lucide-react";
+import { UserCircle2, Share2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 const Index = () => {
@@ -17,13 +17,15 @@ const Index = () => {
 
   useEffect(() => {
     const checkAuthStatus = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setIsAuthenticated(!!session?.user);
+      const { data } = await supabase.auth.getSession();
+      setIsAuthenticated(!!data.session?.user);
     };
     
     checkAuthStatus();
     
-    const { subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsAuthenticated(!!session?.user);
     });
     

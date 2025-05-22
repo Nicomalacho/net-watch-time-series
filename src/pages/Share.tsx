@@ -1,198 +1,262 @@
 
 import React, { useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { toast } from "sonner";
-import { ArrowUp, Copy, ExternalLink } from "lucide-react";
-import NetworkChart from "@/components/NetworkChart";
-import StatusIndicator from "@/components/StatusIndicator";
+import { ArrowLeft, Share2, Copy, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/components/ui/sonner";
 
 const Share = () => {
   const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(false);
-  const [shareTitle, setShareTitle] = useState("");
-  const [shareDescription, setShareDescription] = useState("");
-  const [slug, setSlug] = useState("");
-  const [shareUrl, setShareUrl] = useState("");
-  const [user, setUser] = useState<any>(null);
-  
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isCreatingLink, setIsCreatingLink] = useState(false);
+  const [title, setTitle] = useState("My Network Metrics");
+  const [description, setDescription] = useState("Check out my network performance metrics.");
+  const [shareLinks, setShareLinks] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
   useEffect(() => {
-    const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user || null);
+    const checkAuthStatus = async () => {
+      const { data } = await supabase.auth.getSession();
+      const session = data.session;
+      
+      if (!session) {
+        navigate('/auth');
+        return;
+      }
+      
+      setIsAuthenticated(true);
+      fetchShareLinks();
     };
     
-    getSession();
+    checkAuthStatus();
     
-    const { subscription } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
-      
-      if (!session?.user) {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
         navigate('/auth');
       }
+      setIsAuthenticated(!!session);
     });
     
     return () => subscription.unsubscribe();
   }, [navigate]);
-  
-  const generateRandomSlug = () => {
-    return Math.random().toString(36).substring(2, 8) + 
-           Math.random().toString(36).substring(2, 8);
-  };
-  
-  const handleCreateShare = async () => {
-    if (!user) {
-      toast.error("You must be logged in to create a shared link");
-      navigate('/auth');
-      return;
-    }
-    
-    if (!shareTitle) {
-      toast.error("Please provide a title for your shared metrics");
-      return;
-    }
-    
+
+  const fetchShareLinks = async () => {
     setIsLoading(true);
     
     try {
-      const newSlug = slug || generateRandomSlug();
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) return;
       
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('shared_links')
-        .insert({
-          user_id: user.id,
-          slug: newSlug,
-          title: shareTitle,
-          description: shareDescription
-        });
+        .select('*')
+        .eq('user_id', userData.user.id)
+        .order('created_at', { ascending: false });
         
       if (error) throw error;
       
-      const shareLink = `${window.location.origin}/shared/${newSlug}`;
-      setShareUrl(shareLink);
-      setSlug(newSlug);
-      toast.success("Share link created successfully!");
-    } catch (error: any) {
-      console.error("Error creating share link:", error);
-      toast.error(error.message || "Failed to create share link");
+      setShareLinks(data || []);
+    } catch (err) {
+      console.error('Error fetching share links:', err);
+      toast.error('Failed to load your shared links');
     } finally {
       setIsLoading(false);
     }
   };
   
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(shareUrl);
-    toast.success("Link copied to clipboard!");
+  const createShareLink = async () => {
+    if (!isAuthenticated) {
+      toast.error('You must be signed in to share your metrics');
+      return;
+    }
+    
+    setIsCreatingLink(true);
+    
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('User not found');
+      
+      // Generate a random slug
+      const slug = Math.random().toString(36).substring(2, 10);
+      
+      const { data, error } = await supabase
+        .from('shared_links')
+        .insert({
+          user_id: userData.user.id,
+          slug,
+          title,
+          description,
+          is_active: true
+        })
+        .select()
+        .single();
+        
+      if (error) throw error;
+      
+      toast.success('Share link created successfully');
+      fetchShareLinks();
+    } catch (err) {
+      console.error('Error creating share link:', err);
+      toast.error('Failed to create share link');
+    } finally {
+      setIsCreatingLink(false);
+    }
   };
   
+  const deleteShareLink = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('shared_links')
+        .delete()
+        .eq('id', id);
+        
+      if (error) throw error;
+      
+      toast.success('Share link deleted');
+      fetchShareLinks();
+    } catch (err) {
+      console.error('Error deleting share link:', err);
+      toast.error('Failed to delete share link');
+    }
+  };
+  
+  const copyShareLink = (slug: string) => {
+    const url = `${window.location.origin}/shared/${slug}`;
+    navigator.clipboard.writeText(url);
+    toast.success('Link copied to clipboard');
+  };
+
+  if (!isAuthenticated) {
+    return null; // Redirect handled in useEffect
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground pb-8">
       <div className="container mx-auto px-4">
-        <header className="py-6 md:py-8 mb-2 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold">
-              Share Network Metrics
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Create a public link to share your network monitoring data
-            </p>
-          </div>
-          <Button onClick={() => navigate("/")} size="sm" variant="outline" className="flex items-center gap-1">
-            <ArrowUp className="h-4 w-4 rotate-90" />
+        <header className="py-6 md:py-8 mb-6">
+          <Button 
+            onClick={() => navigate('/')}
+            variant="outline"
+            size="sm"
+            className="mb-4"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Dashboard
           </Button>
+          
+          <h1 className="text-2xl md:text-4xl font-bold mb-2">
+            Share Your Metrics
+          </h1>
+          
+          <p className="text-muted-foreground">
+            Create a public link to share your network metrics with others
+          </p>
         </header>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-          <div className="md:col-span-1">
-            <Card>
-              <CardHeader>
-                <CardTitle>Create Share Link</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Title</label>
-                  <Input
+        <div className="grid grid-cols-1 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Share2 className="h-4 w-4" />
+                Create New Share Link
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Title</label>
+                  <Input 
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
                     placeholder="My Network Metrics"
-                    value={shareTitle}
-                    onChange={(e) => setShareTitle(e.target.value)}
                   />
                 </div>
                 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Description (Optional)</label>
-                  <Textarea
-                    placeholder="Details about these metrics..."
-                    value={shareDescription}
-                    onChange={(e) => setShareDescription(e.target.value)}
+                <div>
+                  <label className="block text-sm font-medium mb-1">Description (Optional)</label>
+                  <Textarea 
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Check out my network performance metrics."
+                    rows={3}
                   />
-                </div>
-                
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Custom URL Slug (Optional)</label>
-                  <Input
-                    placeholder="custom-url"
-                    value={slug}
-                    onChange={(e) => setSlug(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Leave blank for auto-generated
-                  </p>
                 </div>
                 
                 <Button 
-                  onClick={handleCreateShare}
-                  disabled={isLoading || !shareTitle}
+                  onClick={createShareLink}
+                  disabled={isCreatingLink || !title.trim()}
                   className="w-full"
                 >
-                  {isLoading ? "Creating..." : "Create Share Link"}
+                  {isCreatingLink ? (
+                    <span className="animate-spin mr-2">●</span>
+                  ) : (
+                    <Share2 className="h-4 w-4 mr-2" />
+                  )}
+                  Create Share Link
                 </Button>
-                
-                {shareUrl && (
-                  <div className="pt-4 border-t mt-4">
-                    <p className="text-sm font-medium mb-2">Your share link:</p>
-                    <div className="flex gap-2">
-                      <Input value={shareUrl} readOnly />
-                      <Button size="icon" variant="outline" onClick={handleCopyLink}>
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="mt-2">
-                      <Button 
-                        variant="secondary" 
-                        size="sm" 
-                        className="w-full"
-                        onClick={() => window.open(shareUrl, '_blank')}
-                      >
-                        <ExternalLink className="h-4 w-4 mr-2" />
-                        Open Link
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+            </CardContent>
+          </Card>
           
-          <div className="md:col-span-2">
-            <Card className="mb-4">
-              <CardHeader>
-                <CardTitle>Preview</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p>This is what visitors will see when they access your shared link.</p>
-              </CardContent>
-            </Card>
-            
-            <div className="space-y-4">
-              <StatusIndicator />
-              <NetworkChart />
-            </div>
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Your Share Links</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="text-center py-4">
+                  <div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full mx-auto"></div>
+                  <p className="text-sm text-muted-foreground mt-2">Loading your share links...</p>
+                </div>
+              ) : shareLinks.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  <p>You haven't created any share links yet.</p>
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {shareLinks.map((link) => (
+                    <div key={link.id} className="py-3 first:pt-0 last:pb-0">
+                      <h3 className="font-medium">{link.title}</h3>
+                      {link.description && (
+                        <p className="text-sm text-muted-foreground mt-1">{link.description}</p>
+                      )}
+                      <div className="flex mt-2 gap-2">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => copyShareLink(link.slug)}
+                        >
+                          <Copy className="h-3 w-3 mr-1" />
+                          Copy Link
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => window.open(`/shared/${link.slug}`, '_blank')}
+                        >
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          Open
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="destructive"
+                          onClick={() => deleteShareLink(link.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
