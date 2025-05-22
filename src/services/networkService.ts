@@ -1,9 +1,21 @@
+
 // Define the types for our network service
 export interface NetworkSnapshot {
   timestamp: number;
   pingTime: number;
   status: 'good' | 'warning' | 'error' | 'unknown';
   online: boolean;
+  networkName?: string;
+  downloadSpeed?: number;
+  uploadSpeed?: number;
+}
+
+export interface NetworkStats {
+  status: 'good' | 'warning' | 'error' | 'unknown';
+  currentPing: number;
+  min: number;
+  max: number;
+  packetLoss: number;
   networkName?: string;
   downloadSpeed?: number;
   uploadSpeed?: number;
@@ -50,13 +62,20 @@ class NetworkService {
   private snapshots: Map<string, NetworkSnapshot[]> = new Map();
   private intervalId: number | null = null;
   private subscribers: Map<string, Set<(data: NetworkSnapshot[]) => void>> = new Map();
+  private statsSubscribers: Map<string, Set<(data: NetworkStats) => void>> = new Map();
   private monitoringSubscribers: Set<MonitoringChangeCallback> = new Set();
   private currentNetwork: string | undefined;
   private isMonitoring: boolean = false;
+  private networkList: string[] = ['Home WiFi', 'Office Network', 'Mobile Hotspot'];
   
   constructor() {
     // Initialize with default network
     this.snapshots.set('default', []);
+  }
+  
+  // Get list of detected networks
+  getNetworks(): string[] {
+    return this.networkList;
   }
   
   // Start monitoring network
@@ -80,6 +99,7 @@ class NetworkService {
       
       // Notify subscribers of new data
       this.notifySubscribers();
+      this.notifyStatsSubscribers();
     }, 3000); // Check every 3 seconds
   }
   
@@ -171,6 +191,11 @@ class NetworkService {
     return this.snapshots.get(name) || [];
   }
   
+  // Get network data for charts (alias for getSnapshots)
+  getNetworkData(networkName?: string): NetworkSnapshot[] {
+    return this.getSnapshots(networkName);
+  }
+  
   // Subscribe to snapshots updates
   subscribe(callback: (data: NetworkSnapshot[]) => void, networkName?: string): () => void {
     const name = networkName || this.currentNetwork || 'default';
@@ -187,6 +212,158 @@ class NetworkService {
       if (subs) {
         subs.delete(callback);
       }
+    };
+  }
+  
+  // Calculate stats from snapshots
+  calculateStats(networkName?: string): NetworkStats {
+    const snapshots = this.getSnapshots(networkName);
+    const recentSnapshots = snapshots.slice(-10); // Last 10 snapshots
+    
+    // If no snapshots, return default stats
+    if (recentSnapshots.length === 0) {
+      return {
+        status: 'unknown',
+        currentPing: 0,
+        min: 0,
+        max: 0,
+        packetLoss: 0,
+        networkName: networkName,
+      };
+    }
+    
+    // Calculate min and max ping time
+    const pingTimes = recentSnapshots
+      .filter(s => s.pingTime >= 0)
+      .map(s => s.pingTime);
+    
+    const min = pingTimes.length > 0 ? Math.min(...pingTimes) : 0;
+    const max = pingTimes.length > 0 ? Math.max(...pingTimes) : 0;
+    
+    // Calculate packet loss
+    const packetLoss = recentSnapshots.length > 0 
+      ? (recentSnapshots.filter(s => !s.online || s.pingTime < 0).length / recentSnapshots.length) * 100
+      : 0;
+    
+    // Get latest snapshot for current status
+    const latestSnapshot = recentSnapshots[recentSnapshots.length - 1];
+    
+    // Find the most recent speed test
+    const latestWithSpeed = [...recentSnapshots].reverse()
+      .find(s => s.downloadSpeed !== undefined && s.uploadSpeed !== undefined);
+    
+    return {
+      status: latestSnapshot?.status || 'unknown',
+      currentPing: latestSnapshot?.pingTime || 0,
+      min,
+      max,
+      packetLoss,
+      networkName: latestSnapshot?.networkName,
+      downloadSpeed: latestWithSpeed?.downloadSpeed,
+      uploadSpeed: latestWithSpeed?.uploadSpeed,
+    };
+  }
+  
+  // Subscribe to stats updates
+  subscribeToStats(callback: (stats: NetworkStats) => void, networkName?: string): () => void {
+    const name = networkName || this.currentNetwork || 'default';
+    
+    if (!this.statsSubscribers.has(name)) {
+      this.statsSubscribers.set(name, new Set());
+    }
+    
+    this.statsSubscribers.get(name)!.add(callback);
+    
+    // Send initial stats
+    const initialStats = this.calculateStats(name);
+    callback(initialStats);
+    
+    // Return unsubscribe function
+    return () => {
+      const subs = this.statsSubscribers.get(name);
+      if (subs) {
+        subs.delete(callback);
+      }
+    };
+  }
+  
+  // Notify all stats subscribers
+  private notifyStatsSubscribers() {
+    for (const [name, subscribers] of this.statsSubscribers.entries()) {
+      const stats = this.calculateStats(name);
+      for (const callback of subscribers) {
+        callback(stats);
+      }
+    }
+  }
+
+  // Get historical metrics (aggregated data for charts)
+  getHistoricalMetrics(networkName?: string, timeframe: 'hour' | 'day' | 'week' = 'day') {
+    const snapshots = this.getSnapshots(networkName);
+    
+    if (snapshots.length === 0) {
+      return {
+        availabilityPercentage: 0,
+        avgPing: 0,
+        p95Ping: 0,
+        avgDownloadSpeed: 0,
+        avgUploadSpeed: 0
+      };
+    }
+    
+    const now = Date.now();
+    const timeframeMs = {
+      'hour': 60 * 60 * 1000,
+      'day': 24 * 60 * 60 * 1000,
+      'week': 7 * 24 * 60 * 60 * 1000
+    }[timeframe];
+    
+    // Filter snapshots by timeframe
+    const filteredSnapshots = snapshots.filter(s => now - s.timestamp <= timeframeMs);
+    
+    if (filteredSnapshots.length === 0) {
+      return {
+        availabilityPercentage: 0,
+        avgPing: 0,
+        p95Ping: 0,
+        avgDownloadSpeed: 0,
+        avgUploadSpeed: 0
+      };
+    }
+    
+    // Calculate availability percentage
+    const availabilityPercentage = 
+      (filteredSnapshots.filter(s => s.online && s.pingTime >= 0 && s.pingTime < 300).length / 
+      filteredSnapshots.length) * 100;
+    
+    // Calculate average ping time
+    const validPings = filteredSnapshots.filter(s => s.pingTime >= 0);
+    const avgPing = validPings.length > 0
+      ? validPings.reduce((sum, s) => sum + s.pingTime, 0) / validPings.length
+      : 0;
+    
+    // Calculate P95 ping time
+    const pingTimes = validPings.map(s => s.pingTime).sort((a, b) => a - b);
+    const p95Index = Math.floor(pingTimes.length * 0.95);
+    const p95Ping = pingTimes.length > 0 ? pingTimes[p95Index] || pingTimes[pingTimes.length - 1] : 0;
+    
+    // Calculate average download and upload speeds
+    const speedSnapshots = filteredSnapshots.filter(
+      s => s.downloadSpeed !== undefined && s.uploadSpeed !== undefined
+    );
+    const avgDownloadSpeed = speedSnapshots.length > 0
+      ? speedSnapshots.reduce((sum, s) => sum + (s.downloadSpeed || 0), 0) / speedSnapshots.length
+      : 0;
+    const avgUploadSpeed = speedSnapshots.length > 0
+      ? speedSnapshots.reduce((sum, s) => sum + (s.uploadSpeed || 0), 0) / speedSnapshots.length
+      : 0;
+    
+    return {
+      availabilityPercentage,
+      avgPing,
+      p95Ping,
+      avgDownloadSpeed,
+      avgUploadSpeed
     };
   }
   
