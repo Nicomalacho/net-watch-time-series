@@ -1,9 +1,7 @@
-
 import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { NetworkSnapshot, networkService } from "@/services/networkService";
-import { ChartContainer } from "@/components/ui/chart";
 import { BarChart4, ChartLineIcon } from "lucide-react";
 import {
   LineChart as RechartsLineChart,
