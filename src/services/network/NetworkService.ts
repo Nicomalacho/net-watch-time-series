@@ -38,7 +38,7 @@ class NetworkService {
     return this.monitor.subscribe(callback, networkName);
   }
   
-  // Analyzer methods (now using monitor)
+  // Calculate network statistics using monitor
   getNetworkData(networkName?: string): NetworkSnapshot[] {
     return this.getSnapshots(networkName);
   }
