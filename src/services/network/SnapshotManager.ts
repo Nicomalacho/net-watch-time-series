@@ -1,9 +1,10 @@
+
 import { NetworkSnapshot, NetworkStats } from './types';
 
 class SnapshotManager {
   private snapshots: Map<string, NetworkSnapshot[]> = new Map();
-  private subscribers: Map<string, Set<(data: NetworkSnapshot[]) => void>> = new Set();
-  private statsSubscribers: Map<string, Set<(data: NetworkStats) => void>> = new Set();
+  private subscribers: Map<string, Set<(data: NetworkSnapshot[]) => void>> = new Map();
+  private statsSubscribers: Map<string, Set<(data: NetworkStats) => void>> = new Map();
   private networkList: string[] = ['Home WiFi', 'Office Network', 'Mobile Hotspot'];
   
   constructor() {
@@ -81,7 +82,7 @@ class SnapshotManager {
   }
   
   // Subscribe to stats updates
-  subscribeToStats(callback: (stats: NetworkStats) => void, networkName?: string, calculateStatsFn: (snapshots: NetworkSnapshot[]) => NetworkStats): () => void {
+  subscribeToStats(callback: (stats: NetworkStats) => void, networkName: string, calculateStatsFn: (snapshots: NetworkSnapshot[]) => NetworkStats): () => void {
     const name = networkName || 'default';
     
     if (!this.statsSubscribers.has(name)) {
