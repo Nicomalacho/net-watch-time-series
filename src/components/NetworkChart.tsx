@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { NetworkSnapshot, networkService } from "@/services/networkService";
-import { BarChart4, ChartLineIcon } from "lucide-react";
+import { ChartLineIcon } from "lucide-react";
 import {
   LineChart as RechartsLineChart,
   Line,
@@ -39,13 +39,14 @@ const NetworkChart: React.FC<NetworkChartProps> = ({
     const unsubscribe = networkService.subscribe((newData) => {
       console.log('NetworkChart: Received new data:', newData.length, 'items');
       console.log('NetworkChart: Latest data point:', newData[newData.length - 1]);
-      setData(newData);
+      // Force a new array reference to trigger re-render
+      setData([...newData]);
     }, selectedNetwork);
     
     // Get initial data
     const initialData = networkService.getSnapshots(selectedNetwork);
     console.log('NetworkChart: Initial data:', initialData.length, 'items');
-    setData(initialData);
+    setData([...initialData]);
     
     return () => {
       console.log('NetworkChart: Unsubscribing from network:', selectedNetwork);
@@ -59,24 +60,29 @@ const NetworkChart: React.FC<NetworkChartProps> = ({
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   };
 
-  const getPingData = () => {
-    return data.map((item) => ({
-      name: formatTimeLabel(item.timestamp),
-      ping: item.pingTime < 0 ? null : item.pingTime,
-      timestamp: item.timestamp,
-    }));
-  };
-  
-  const getSpeedData = () => {
-    return data.map((item) => ({
-      name: formatTimeLabel(item.timestamp),
-      download: item.downloadSpeed,
-      upload: item.uploadSpeed,
-      timestamp: item.timestamp,
-    }));
-  };
-  
-  const chartData = chartType === "ping" ? getPingData() : getSpeedData();
+  // Memoize chart data to ensure proper updates
+  const chartData = useMemo(() => {
+    console.log('NetworkChart: Recalculating chart data for', data.length, 'items');
+    
+    if (chartType === "ping") {
+      return data.map((item, index) => ({
+        name: formatTimeLabel(item.timestamp),
+        ping: item.pingTime < 0 ? null : item.pingTime,
+        timestamp: item.timestamp,
+        id: `${item.timestamp}-${index}`, // Add unique ID for React key
+      }));
+    } else {
+      return data.map((item, index) => ({
+        name: formatTimeLabel(item.timestamp),
+        download: item.downloadSpeed,
+        upload: item.uploadSpeed,
+        timestamp: item.timestamp,
+        id: `${item.timestamp}-${index}`, // Add unique ID for React key
+      }));
+    }
+  }, [data, chartType]);
+
+  console.log('NetworkChart: Rendering with', chartData.length, 'chart data points');
 
   return (
     <Card>
@@ -108,6 +114,7 @@ const NetworkChart: React.FC<NetworkChartProps> = ({
           <ResponsiveContainer width="100%" height="100%">
             {chartType === "ping" ? (
               <RechartsLineChart
+                key={`ping-${data.length}`} // Force re-render when data changes
                 data={chartData}
                 margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
               >
@@ -125,11 +132,13 @@ const NetworkChart: React.FC<NetworkChartProps> = ({
                   strokeWidth={2}
                   dot={false}
                   activeDot={{ r: 6 }}
-                  animationDuration={500}
+                  animationDuration={300}
+                  connectNulls={false}
                 />
               </RechartsLineChart>
             ) : (
               <RechartsLineChart
+                key={`speed-${data.length}`} // Force re-render when data changes
                 data={chartData}
                 margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
               >
@@ -149,7 +158,7 @@ const NetworkChart: React.FC<NetworkChartProps> = ({
                   strokeWidth={2}
                   dot={false}
                   activeDot={{ r: 6 }}
-                  animationDuration={500}
+                  animationDuration={300}
                 />
                 <Line
                   type="monotone"
@@ -159,7 +168,7 @@ const NetworkChart: React.FC<NetworkChartProps> = ({
                   strokeWidth={2}
                   dot={false}
                   activeDot={{ r: 6 }}
-                  animationDuration={500}
+                  animationDuration={300}
                 />
               </RechartsLineChart>
             )}
