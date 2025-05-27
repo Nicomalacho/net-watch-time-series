@@ -1,5 +1,5 @@
-
 import { NetworkSnapshot, NetworkStats } from './types';
+import { metricsStorage } from '../MetricsStorage';
 
 class SnapshotManager {
   private snapshots: Map<string, NetworkSnapshot[]> = new Map();
@@ -18,7 +18,7 @@ class SnapshotManager {
   }
   
   // Add a new snapshot for a specific network
-  addSnapshot(snapshot: NetworkSnapshot) {
+  async addSnapshot(snapshot: NetworkSnapshot) {
     const networkName = snapshot.networkName || 'default';
     console.log('SnapshotManager: Adding snapshot for network:', networkName, snapshot);
     
@@ -35,6 +35,11 @@ class SnapshotManager {
     
     networkSnapshots.push(snapshot);
     console.log('SnapshotManager: Total snapshots for', networkName, ':', networkSnapshots.length);
+    
+    // Save to database (async, don't wait for it)
+    metricsStorage.saveMetric(snapshot).catch(error => {
+      console.error('SnapshotManager: Failed to save metric to database:', error);
+    });
     
     // Notify subscribers of new data
     this.notifySubscribers(networkName);

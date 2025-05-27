@@ -1,4 +1,3 @@
-
 import { NetworkSnapshot, NetworkStats, MonitoringChangeCallback } from './types';
 import MonitoringManager from './MonitoringManager';
 import SnapshotManager, { calculateStats } from './SnapshotManager';
@@ -24,9 +23,11 @@ class NetworkMonitor {
     // Initialize network if it doesn't exist
     this.snapshotManager.initializeNetwork(currentNetwork);
     
-    // Setup monitoring interval
+    // Setup monitoring interval with async callback
     this.monitoringManager.setupMonitoringInterval(
-      (snapshot) => this.snapshotManager.addSnapshot(snapshot),
+      async (snapshot) => {
+        await this.snapshotManager.addSnapshot(snapshot);
+      },
       (network) => this.snapshotManager.getSnapshotsLength(network)
     );
   }

@@ -58,8 +58,10 @@ const Shared = () => {
           
         if (metricsError) throw metricsError;
         
+        console.log('Shared: Fetched metrics data:', metricsData?.length || 0, 'items');
+        
         // Transform the data to match NetworkSnapshot format
-        const transformedMetrics: NetworkSnapshot[] = metricsData.map(item => ({
+        const transformedMetrics: NetworkSnapshot[] = (metricsData || []).map(item => ({
           timestamp: item.timestamp,
           pingTime: item.ping_time,
           status: item.status as 'good' | 'warning' | 'error' | 'unknown',
@@ -136,6 +138,12 @@ const Shared = () => {
           {shareData.description && (
             <p className="text-muted-foreground mt-2">
               {shareData.description}
+            </p>
+          )}
+          
+          {metrics.length === 0 && (
+            <p className="text-muted-foreground mt-4 text-sm">
+              No network metrics available yet. The user needs to start monitoring their network to see data here.
             </p>
           )}
         </header>

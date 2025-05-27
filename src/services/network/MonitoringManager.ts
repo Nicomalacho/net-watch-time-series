@@ -102,7 +102,7 @@ class MonitoringManager {
   
   // Setup the monitoring interval
   setupMonitoringInterval(
-    callback: (snapshot: NetworkSnapshot) => void, 
+    callback: (snapshot: NetworkSnapshot) => Promise<void>, 
     getSnapshotsLength: (network: string) => number
   ): void {
     if (this.intervalId !== null) {
@@ -122,9 +122,9 @@ class MonitoringManager {
       if (snapshotsLength % 5 === 0) {
         console.log('MonitoringManager: Running speed test (every 5 checks)');
         const snapshotWithSpeed = await this.runSpeedTest(result);
-        callback(snapshotWithSpeed);
+        await callback(snapshotWithSpeed);
       } else {
-        callback(result);
+        await callback(result);
       }
       
     }, 3000); // Check every 3 seconds
