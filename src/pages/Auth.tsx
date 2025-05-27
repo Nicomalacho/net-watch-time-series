@@ -16,6 +16,11 @@ const Auth = () => {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   
+  // Get the current domain for redirect URL
+  const getRedirectUrl = () => {
+    return window.location.origin;
+  };
+  
   useEffect(() => {
     // Check if user is already logged in
     const checkSession = async () => {
@@ -36,6 +41,9 @@ const Auth = () => {
       const { error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          emailRedirectTo: getRedirectUrl()
+        }
       });
       
       if (error) throw error;
