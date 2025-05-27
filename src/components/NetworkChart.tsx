@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -27,16 +28,27 @@ const NetworkChart: React.FC<NetworkChartProps> = ({
   const [chartType, setChartType] = useState<"ping" | "speed">("ping");
   
   useEffect(() => {
+    console.log('NetworkChart: Setting up subscription for network:', selectedNetwork);
+    
     if (sharedMetrics) {
+      console.log('NetworkChart: Using shared metrics:', sharedMetrics.length, 'items');
       setData(sharedMetrics);
       return;
     }
     
     const unsubscribe = networkService.subscribe((newData) => {
+      console.log('NetworkChart: Received new data:', newData.length, 'items');
+      console.log('NetworkChart: Latest data point:', newData[newData.length - 1]);
       setData(newData);
     }, selectedNetwork);
     
+    // Get initial data
+    const initialData = networkService.getSnapshots(selectedNetwork);
+    console.log('NetworkChart: Initial data:', initialData.length, 'items');
+    setData(initialData);
+    
     return () => {
+      console.log('NetworkChart: Unsubscribing from network:', selectedNetwork);
       unsubscribe();
     };
   }, [selectedNetwork, sharedMetrics]);

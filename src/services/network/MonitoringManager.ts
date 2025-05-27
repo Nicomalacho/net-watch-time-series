@@ -15,6 +15,8 @@ class MonitoringManager {
     this.isMonitoring = true;
     this.currentNetwork = networkName || 'default';
     
+    console.log('MonitoringManager: Started monitoring network:', this.currentNetwork);
+    
     // Notify subscribers of monitoring state change
     this.notifyMonitoringSubscribers();
     
@@ -24,6 +26,7 @@ class MonitoringManager {
   // Stop monitoring
   stopMonitoring() {
     if (this.intervalId !== null) {
+      console.log('MonitoringManager: Stopping monitoring');
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
@@ -81,17 +84,20 @@ class MonitoringManager {
       networkName: currentNetwork,
     };
     
+    console.log('MonitoringManager: Created snapshot:', snapshot);
     return snapshot;
   }
   
   // Run speed test and update snapshot
   async runSpeedTest(snapshot: NetworkSnapshot): Promise<NetworkSnapshot> {
     const { download, upload } = await mockSpeedTest();
-    return {
+    const result = {
       ...snapshot,
       downloadSpeed: download,
       uploadSpeed: upload
     };
+    console.log('MonitoringManager: Added speed test to snapshot:', result);
+    return result;
   }
   
   // Setup the monitoring interval
@@ -103,14 +109,18 @@ class MonitoringManager {
       clearInterval(this.intervalId);
     }
     
+    console.log('MonitoringManager: Setting up monitoring interval for network:', this.currentNetwork);
+    
     this.intervalId = window.setInterval(async () => {
       if (!this.currentNetwork) return;
       
+      console.log('MonitoringManager: Running network check...');
       const result = await this.checkNetwork(this.currentNetwork);
       
       // Every 5 checks, do a speed test
       const snapshotsLength = getSnapshotsLength(this.currentNetwork);
       if (snapshotsLength % 5 === 0) {
+        console.log('MonitoringManager: Running speed test (every 5 checks)');
         const snapshotWithSpeed = await this.runSpeedTest(result);
         callback(snapshotWithSpeed);
       } else {

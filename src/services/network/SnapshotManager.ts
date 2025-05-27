@@ -20,6 +20,7 @@ class SnapshotManager {
   // Add a new snapshot for a specific network
   addSnapshot(snapshot: NetworkSnapshot) {
     const networkName = snapshot.networkName || 'default';
+    console.log('SnapshotManager: Adding snapshot for network:', networkName, snapshot);
     
     if (!this.snapshots.has(networkName)) {
       this.snapshots.set(networkName, []);
@@ -33,10 +34,17 @@ class SnapshotManager {
     }
     
     networkSnapshots.push(snapshot);
+    console.log('SnapshotManager: Total snapshots for', networkName, ':', networkSnapshots.length);
     
     // Notify subscribers of new data
     this.notifySubscribers(networkName);
     this.notifyStatsSubscribers(networkName);
+    
+    // Also notify 'default' subscribers if this is not the default network
+    if (networkName !== 'default') {
+      this.notifySubscribers('default');
+      this.notifyStatsSubscribers('default');
+    }
   }
   
   // Get snapshots length for a specific network
@@ -53,15 +61,18 @@ class SnapshotManager {
   // Subscribe to snapshots updates
   subscribe(callback: (data: NetworkSnapshot[]) => void, networkName?: string): () => void {
     const name = networkName || 'default';
+    console.log('SnapshotManager: New subscription for network:', name);
     
     if (!this.subscribers.has(name)) {
       this.subscribers.set(name, new Set());
     }
     
     this.subscribers.get(name)!.add(callback);
+    console.log('SnapshotManager: Total subscribers for', name, ':', this.subscribers.get(name)!.size);
     
     // Return unsubscribe function
     return () => {
+      console.log('SnapshotManager: Unsubscribing from network:', name);
       const subs = this.subscribers.get(name);
       if (subs) {
         subs.delete(callback);
@@ -72,9 +83,11 @@ class SnapshotManager {
   // Notify all subscribers for a specific network
   notifySubscribers(networkName: string) {
     const subs = this.subscribers.get(networkName);
+    console.log('SnapshotManager: Notifying subscribers for network:', networkName, 'Count:', subs?.size || 0);
     
     if (subs) {
       const data = this.getSnapshots(networkName);
+      console.log('SnapshotManager: Sending data with', data.length, 'snapshots');
       subs.forEach(callback => {
         callback(data);
       });
